@@ -174,6 +174,18 @@ if (LLAMA_LLGUIDANCE)
         BUILD_BYPRODUCTS ${LLGUIDANCE_PATH}/${LLGUIDANCE_LIB_NAME} ${LLGUIDANCE_PATH}/llguidance.h
         UPDATE_COMMAND ""
     )
+
+    ExternalProject_Add_Step(llguidance_ext llguidance_collect
+        COMMAND ${CMAKE_COMMAND}
+            -DLLGUIDANCE_TARGET_DIR=${LLGUIDANCE_SRC}/target
+            -DLLGUIDANCE_PROFILE_DIR=${LLGUIDANCE_PATH}
+            -DLLGUIDANCE_LIB_NAME=${LLGUIDANCE_LIB_NAME}
+            -P ${PROJECT_SOURCE_DIR}/cmake/llguidance.cmake
+        COMMENT "Collecting llguidance artifacts"
+        DEPENDEES build
+        DEPENDERS install
+    )
+
     target_compile_definitions(${TARGET} PUBLIC LLAMA_USE_LLGUIDANCE)
 
     add_library(llguidance STATIC IMPORTED)
