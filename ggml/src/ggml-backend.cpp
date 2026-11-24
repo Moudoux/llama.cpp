@@ -1738,6 +1738,8 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
         split->n_inputs = 0;
         int cur_backend_id = split->backend_id;
         bool split_has_nodes = false;
+        // the split that last used each weight copied to another backend, and the tensor copied for that split
+        std::unordered_map<const struct ggml_tensor *, std::pair<int, struct ggml_tensor *>> weight_inputs;
         for (; i < graph->n_nodes; i++) {
             struct ggml_tensor * node = graph->nodes[i];
 
@@ -1803,6 +1805,25 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
                 GGML_ASSERT(src_backend_id != -1); // all inputs should be assigned by now
 
                 if (src_backend_id != cur_backend_id && !ggml_backend_sched_buffer_supported(sched, src, cur_backend_id)) {
+                    // a weight used again in a later split (e.g. a layer run several times per graph) gets a new copy
+                    // there, through a view of the weight with its own hash id, so that each copy lives only as long as
+                    // its split instead of from the first use to the last one
+                    if (src->buffer != NULL && src->buffer->usage == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
+                        auto it = weight_inputs.find(src);
+                        if (it == weight_inputs.end()) {
+                            weight_inputs[src] = { i_split, src };
+                        } else {
+                            if (it->second.first != i_split) {
+                                struct ggml_tensor * view = ggml_view_tensor(sched->ctx, src);
+                                ggml_format_name(view, "%s#split%d", src->name, i_split);
+                                view->buffer = src->buffer;
+                                sched->hv_tensor_backend_ids[hash_id(view)] = src_backend_id;
+                                it->second = { i_split, view };
+                            }
+                            src    = it->second.second;
+                            src_id = hash_id(src);
+                        }
+                    }
                     // create a copy of the input in the split's backend
                     if (tensor_id_copy(src_id, cur_backend_id, 0) == NULL) {
                         ggml_backend_t backend = sched->backends[cur_backend_id];
